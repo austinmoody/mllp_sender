@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
+	"unicode"
 )
 
 var (
@@ -18,6 +20,7 @@ var (
 	port         = flag.Int("port", -1, "Port # to send data to.")
 	mllpStartStr = flag.String("mllp-start", "11", "MLLP start character(s).")
 	mllpEndStr   = flag.String("mllp-end", "28,13", "MLLP ending character(s).")
+	timeout      = flag.String("timeout", "10s", "Timeout, in seconds, to stop listening for response")
 )
 
 func main() {
@@ -47,10 +50,11 @@ func main() {
 	}
 
 	conn, err := net.DialTCP("tcp", nil, tcpAddr)
-	defer conn.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	defer CloseConnection(conn)
 
 	var dataToSend []byte
 	dataToSend = append(dataToSend, mllpStart[:]...)
@@ -63,11 +67,27 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Set timeout to close connection and exit
+	// if we aren't getting a response after our submission.
+	// Example: An HL7 listener that isn't setup to respond w/ ACK messages
+	timeoutDuration, err := time.ParseDuration(*timeout)
+	if err != nil {
+		log.Fatal(err)
+	}
+	time.AfterFunc(timeoutDuration, func() {
+		CloseConnection(conn)
+		fmt.Printf("Timeout (%s) while listening for response.", timeoutDuration.String())
+		os.Exit(0)
+	})
+
+	fmt.Println("Data Sent")
+	fmt.Printf("\tMLLP start character(s): %d (decimal)\n", mllpStart)
+	fmt.Printf("\tMLLP end   character(s): %d (decimal)\n", mllpEnd)
+
 	connBuf := bufio.NewReader(conn)
-
+	var fullResponse []byte
 	for {
-
-		slc, err := connBuf.ReadSlice(mllpEnd[len(mllpEnd)-1])
+		bt, err := connBuf.ReadByte()
 
 		if err != nil {
 			if err == io.EOF {
@@ -77,11 +97,25 @@ func main() {
 			}
 		}
 
-		if len(slc) > 0 {
-			fmt.Printf("%s\n", string(slc))
-		}
+		fullResponse = append(fullResponse, bt)
 
+		// Check to see if we have gotten MLLP End character(s)
+		if len(fullResponse) >= len(mllpEnd) && bytes.Equal(mllpEnd, fullResponse[len(fullResponse)-len(mllpEnd):]) {
+			break
+		}
 	}
+
+	responseString := string(fullResponse)
+	// MLLP start and end characters can interfere w/ output to command line
+	ripNonPrintable := func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return '\n'
+	}
+	responseString = strings.Map(ripNonPrintable, responseString)
+
+	fmt.Printf("Server Response:\n\n%s\n\n", responseString)
 }
 
 func StringSplitToByteArray(stringToSplit string, delim string) []byte {
@@ -107,4 +141,11 @@ func GetStdinData() string {
 	}
 
 	return buf.String()
+}
+
+func CloseConnection(conn *net.TCPConn) {
+	err := conn.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
