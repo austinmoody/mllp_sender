@@ -18,9 +18,15 @@ import (
 var (
 	host         = flag.String("host", "", "Host to send data to.")
 	port         = flag.Int("port", -1, "Port # to send data to.")
-	mllpStartStr = flag.String("mllp-start", "11", "MLLP start character(s).")
-	mllpEndStr   = flag.String("mllp-end", "28,13", "MLLP ending character(s).")
-	timeout      = flag.String("timeout", "10s", "Timeout, in seconds, to stop listening for response")
+	mllpStartStr = flag.String("mllp-start",
+		"11",
+		"MLLP start character(s), specified as decimal values.\nFor example Vertical Tab = 11.")
+	mllpEndStr = flag.String("mllp-end",
+		"28,13",
+		"MLLP ending character(s), specified as decimal values.\nFor example File Separator = 28.")
+	timeout = flag.String("timeout",
+		"10s",
+		"Timeout to stop listening for response.\nTo be specified in format understood by ParseDuration.\nSee https://pkg.go.dev/time#ParseDuration")
 )
 
 func main() {
